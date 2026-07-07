@@ -5,17 +5,20 @@ UI, который можно дать русскоязычному школьн
 ## Архитектура
 
 ```
-Ученик → Open WebUI (аккаунты, только модель «tutor»)
-            │  OpenAI-совместимый запрос, ключ = LITELLM_MASTER_KEY
-            ▼
-         LiteLLM proxy (:4000, только во внутренней docker-сети)
-            │  async_pre_call_hook (custom_callbacks.py):
-            │   1. вырезает ВСЕ system-сообщения клиента
-            │   2. вставляет неизменяемый tutor-промпт на позицию 0
-            │   3. добавляет краткое напоминание в конец (sandwich)
-            ▼
-         OpenAI API (gpt-4o-mini)
+  Yandex.Cloud (один хост)                              DigitalOcean
+  ┌──────────────────────────────────────┐             ┌────────────────┐
+  Ученик → Open WebUI → LiteLLM proxy ─────┼──HTTPS─────►│ nginx-прокси   │──► api.openai.com
+           (аккаунты)   (:4000, guardrail) │  ключ OpenAI│ openai-proxy.  │
+  └──────────────────────────────────────┘  в заголовке │ bularond.ru    │
+                                                         └────────────────┘
 ```
+
+LiteLLM ходит в OpenAI **не напрямую, а через nginx-прокси на DO-хосте** (обход прямого доступа к OpenAI из Yandex.Cloud). Ключ OpenAI остаётся в LiteLLM — DO-прокси лишь пробрасывает заголовок `Authorization` на `api.openai.com`, у себя ключ не хранит.
+
+`async_pre_call_hook` в LiteLLM (`custom_callbacks.py`):
+1. вырезает ВСЕ system-сообщения клиента;
+2. вставляет неизменяемый tutor-промпт на позицию 0;
+3. добавляет краткое напоминание в конец (sandwich).
 
 Служебные вызовы Open WebUI (генерация заголовков и тегов чатов) идут на отдельную модель `task` без guardrail — они дешёвые и не искажаются тьютор-промптом.
 
@@ -25,11 +28,15 @@ UI, который можно дать русскоязычному школьн
 
 | Файл | Назначение |
 |------|------------|
-| `docker-compose.yml` | Оркестрация Open WebUI + LiteLLM |
+| `docker-compose.yml` | Yandex.Cloud: Open WebUI + LiteLLM |
+| `nginx/edu.bularond.ru.conf` | YC: nginx → Open WebUI |
+| `nginx/openai-proxy.bularond.ru.conf` | DigitalOcean: nginx-прокси → api.openai.com |
 | `.env.example` | Шаблон переменных окружения (ключи, секреты) |
-| `litellm/config.yaml` | Модели `tutor`/`task`, регистрация guardrail, мастер-ключ |
+| `litellm/config.yaml` | Модели `tutor`/`task`, guardrail, `api_base` на DO-прокси |
 | `litellm/custom_callbacks.py` | Принудительное внедрение промпта (сердце системы) |
 | `litellm/system_prompt.md` | Текст образовательного промпта — **редактируй здесь** |
+
+`OPENAI_PROXY_BASE_URL` в `.env` задаёт, куда LiteLLM шлёт запросы к OpenAI: на DO-прокси (`https://openai-proxy.bularond.ru/v1`) или напрямую (`https://api.openai.com/v1`) — **обязательно с `/v1`**.
 
 ## Запуск
 

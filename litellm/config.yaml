@@ -5,6 +5,10 @@ model_list:
     litellm_params:
       model: openai/gpt-5.4-mini
       api_key: os.environ/OPENAI_API_KEY
+      # Ходим в OpenAI не напрямую, а через nginx-прокси на DO-хосте
+      # (напр. https://openai-proxy.bularond.ru/v1). Ключ шлём как есть — nginx
+      # его только пробрасывает на api.openai.com.
+      api_base: os.environ/OPENAI_PROXY_BASE_URL
       # gpt-5.4-mini — модель с рассуждением. Даём бюджет «подумать», иначе она
       # отвечает поверхностно и путается в арифметике/знаках при проверке шагов.
       reasoning_effort: high
@@ -15,6 +19,7 @@ model_list:
     litellm_params:
       model: openai/gpt-4o-mini
       api_key: os.environ/OPENAI_API_KEY
+      api_base: os.environ/OPENAI_PROXY_BASE_URL
 
   # Эмбеддинги для RAG. Отдаём OpenAI, чтобы Open WebUI не качал локальную
   # sentence-transformers модель при старте (это блокирует и замедляет первый запуск).
@@ -22,6 +27,7 @@ model_list:
     litellm_params:
       model: openai/text-embedding-3-small
       api_key: os.environ/OPENAI_API_KEY
+      api_base: os.environ/OPENAI_PROXY_BASE_URL
 
 litellm_settings:
   # Регистрация pre-call хука, который внедряет образовательный промпт.

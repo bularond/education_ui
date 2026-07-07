@@ -1,7 +1,8 @@
 services:
   # ---------------------------------------------------------------------------
   # LiteLLM — шлюз к OpenAI + принудительный образовательный промпт.
-  # Наружу порт НЕ публикуется: доступен только другим сервисам в docker-сети.
+  # Порт слушает только на localhost; наружу отдаётся через nginx (edu-llm.bularond.ru).
+  # Open WebUI при этом ходит в него по внутренней docker-сети (http://litellm:4000).
   # ---------------------------------------------------------------------------
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
@@ -13,10 +14,13 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      # Базовый URL OpenAI = nginx-прокси на DO-хосте (обход прямого доступа к OpenAI).
+      OPENAI_PROXY_BASE_URL: ${OPENAI_PROXY_BASE_URL}
       # Чтобы `callbacks: custom_callbacks.proxy_handler_instance` импортировался.
       PYTHONPATH: /app/project
-    expose:
-      - "4000"
+    ports:
+      # Только на localhost — наружу проксирует nginx (edu-llm.bularond.ru -> :4000).
+      - "127.0.0.1:4000:4000"
     healthcheck:
       # В образе LiteLLM нет curl — проверяем через python.
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4000/health/liveliness').status==200 else 1)"]
