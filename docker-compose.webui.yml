@@ -1,0 +1,55 @@
+# WebUI-хост (edu-ui.bularond.ru): только Open WebUI.
+# Ходит в удалённый LiteLLM по HTTPS (edu.bularond.ru), авторизуясь мастер-ключом.
+# Наружу отдаётся через nginx (nginx/edu-ui.bularond.ru.conf).
+#
+# Запуск на этом хосте:
+#   docker compose -f docker-compose.webui.yml up -d
+#
+# .env на этом хосте: LITELLM_MASTER_KEY (тот же, что на LLM-хосте), WEBUI_SECRET_KEY
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    restart: unless-stopped
+    ports:
+      # Только на localhost — наружу проксирует nginx (edu-ui.bularond.ru -> :3001).
+      - "127.0.0.1:3001:8080"
+    volumes:
+      - open-webui-data:/app/backend/data
+    environment:
+      # Удалённый LiteLLM. Переопредели LITELLM_BASE_URL в .env при другом домене.
+      OPENAI_API_BASE_URL: ${LITELLM_BASE_URL:-https://edu.bularond.ru/v1}
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+
+      # Публичный адрес самого WebUI (для корректных ссылок/редиректов).
+      WEBUI_URL: ${WEBUI_URL:-https://edu-ui.bularond.ru}
+
+      # Аутентификация и регистрация.
+      WEBUI_AUTH: "true"
+      ENABLE_SIGNUP: "true"
+      # Новые пользователи ждут одобрения администратора (первый юзер = админ).
+      DEFAULT_USER_ROLE: "pending"
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
+      WEBUI_NAME: "Учебный помощник"
+
+      # Служебные вызовы (заголовки/теги) — на модель без guardrail.
+      TASK_MODEL_EXTERNAL: "task"
+      ENABLE_TAGS_GENERATION: "true"
+
+      # Эмбеддинги отдаём удалённому LiteLLM, а не локальной моделью —
+      # иначе Open WebUI качает ~500МБ sentence-transformers при первом старте и виснет.
+      RAG_EMBEDDING_ENGINE: "openai"
+      RAG_EMBEDDING_MODEL: "text-embedding-3-small"
+      RAG_OPENAI_API_BASE_URL: ${LITELLM_BASE_URL:-https://edu.bularond.ru/v1}
+      RAG_OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
+      RAG_EMBEDDING_MODEL_AUTO_UPDATE: "false"
+
+      # Урезаем права обычных пользователей: не дать менять модель/промпт под собой.
+      USER_PERMISSIONS_CHAT_CONTROLS: "false"
+      USER_PERMISSIONS_CHAT_SYSTEM_PROMPT: "false"
+      # Отключаем то, что не нужно ученику и может отвлекать/тратить бюджет.
+      ENABLE_COMMUNITY_SHARING: "false"
+      ENABLE_OPENAI_API: "true"
+      ENABLE_OLLAMA_API: "false"
+
+volumes:
+  open-webui-data:

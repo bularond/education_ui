@@ -1,0 +1,32 @@
+# LLM-хост (edu.bularond.ru): только LiteLLM-шлюз + образовательный guardrail.
+# Наружу отдаётся через nginx (nginx/edu.bularond.ru.conf) по HTTPS,
+# авторизация — мастер-ключом (Bearer) на каждый запрос.
+#
+# Запуск на этом хосте:
+#   docker compose -f docker-compose.litellm.yml up -d
+#
+# .env на этом хосте: OPENAI_API_KEY, LITELLM_MASTER_KEY
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    restart: unless-stopped
+    # Монтируем в подпапку, чтобы НЕ перекрыть /app и его entrypoint образа.
+    command: ["--config", "/app/project/config.yaml", "--port", "4000"]
+    volumes:
+      - ./litellm:/app/project
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      # Чтобы `callbacks: custom_callbacks.proxy_handler_instance` импортировался.
+      PYTHONPATH: /app/project
+    ports:
+      # Только на localhost — наружу проксирует nginx (edu.bularond.ru -> :4000).
+      # Порт LiteLLM не доступен из интернета напрямую.
+      - "127.0.0.1:4000:4000"
+    healthcheck:
+      # В образе LiteLLM нет curl — проверяем через python.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4000/health/liveliness').status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
