@@ -123,7 +123,9 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 	case "tutor":
 		applyGuardrail(body)
 		body["model"] = tutorModel
-		if reasoning != "" {
+		// reasoning_effort несовместим с function tools на gpt-5.x в
+		// /v1/chat/completions — если Open WebUI прислал tools, не добавляем его.
+		if reasoning != "" && !hasTools(body) {
 			body["reasoning_effort"] = reasoning
 		}
 	case "task":
@@ -142,6 +144,12 @@ func handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	forward(w, "/embeddings", body)
+}
+
+// hasTools сообщает, есть ли в запросе непустой массив function tools.
+func hasTools(body map[string]any) bool {
+	t, ok := body["tools"].([]any)
+	return ok && len(t) > 0
 }
 
 // applyGuardrail вырезает ВСЕ клиентские system-сообщения и обрамляет диалог
