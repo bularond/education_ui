@@ -35,8 +35,9 @@ services:
       litellm:
         condition: service_healthy
     ports:
-      # На проде закрой за reverse-proxy/VPN (Caddy, nginx, Tailscale, Cloudflare Access).
-      - "3000:8080"
+      # Слушаем только на localhost — наружу ходит nginx (edu.bularond.ru -> :3001).
+      # Порт приложения не доступен из интернета напрямую.
+      - "127.0.0.1:3001:8080"
     volumes:
       - open-webui-data:/app/backend/data
     environment:
