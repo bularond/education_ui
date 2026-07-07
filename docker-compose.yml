@@ -1,33 +1,30 @@
 services:
   # ---------------------------------------------------------------------------
-  # LiteLLM — шлюз к OpenAI + принудительный образовательный промпт.
+  # eduproxy — лёгкий OpenAI-совместимый прокси (Go, ~15 МБ RAM) вместо LiteLLM.
+  # Guardrail для tutor + проброс task/эмбеддингов + форвард в OpenAI.
   # Порт слушает только на localhost; наружу отдаётся через nginx (edu-llm.bularond.ru).
-  # Open WebUI при этом ходит в него по внутренней docker-сети (http://litellm:4000).
+  # Open WebUI ходит в него по внутренней docker-сети (http://proxy:4000).
   # ---------------------------------------------------------------------------
-  litellm:
-    image: ghcr.io/berriai/litellm:main-stable
+  proxy:
+    build: ./proxy
     restart: unless-stopped
-    # Монтируем в подпапку, чтобы НЕ перекрыть /app и его entrypoint образа.
-    command: ["--config", "/app/project/config.yaml", "--port", "4000"]
-    volumes:
-      - ./litellm:/app/project
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       # Базовый URL OpenAI = nginx-прокси на DO-хосте (обход прямого доступа к OpenAI).
       OPENAI_PROXY_BASE_URL: ${OPENAI_PROXY_BASE_URL}
-      # Чтобы `callbacks: custom_callbacks.proxy_handler_instance` импортировался.
-      PYTHONPATH: /app/project
+    volumes:
+      # Промпт монтируем ридонли — правки без пересборки образа (нужен restart).
+      - ./proxy/system_prompt.md:/system_prompt.md:ro
     ports:
       # Только на localhost — наружу проксирует nginx (edu-llm.bularond.ru -> :4000).
       - "127.0.0.1:4000:4000"
     healthcheck:
-      # В образе LiteLLM нет curl — проверяем через python.
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4000/health/liveliness').status==200 else 1)"]
+      test: ["CMD", "/proxy", "-healthcheck"]
       interval: 15s
       timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period: 10s
 
   # ---------------------------------------------------------------------------
   # Open WebUI — чат-интерфейс для учеников (аккаунты, история, регистрация).
@@ -36,7 +33,7 @@ services:
     image: ghcr.io/open-webui/open-webui:main
     restart: unless-stopped
     depends_on:
-      litellm:
+      proxy:
         condition: service_healthy
     ports:
       # Слушаем только на localhost — наружу ходит nginx (edu.bularond.ru -> :3001).
@@ -45,8 +42,8 @@ services:
     volumes:
       - open-webui-data:/app/backend/data
     environment:
-      # Ходим в LLM только через LiteLLM.
-      OPENAI_API_BASE_URL: http://litellm:4000/v1
+      # Ходим в LLM только через наш прокси.
+      OPENAI_API_BASE_URL: http://proxy:4000/v1
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
 
       # Аутентификация и регистрация.
@@ -61,11 +58,11 @@ services:
       TASK_MODEL_EXTERNAL: "task"
       ENABLE_TAGS_GENERATION: "true"
 
-      # Эмбеддинги отдаём через LiteLLM (OpenAI), а не локальной моделью —
+      # Эмбеддинги отдаём через прокси (OpenAI), а не локальной моделью —
       # иначе Open WebUI качает ~500МБ sentence-transformers при первом старте и виснет.
       RAG_EMBEDDING_ENGINE: "openai"
       RAG_EMBEDDING_MODEL: "text-embedding-3-small"
-      RAG_OPENAI_API_BASE_URL: http://litellm:4000/v1
+      RAG_OPENAI_API_BASE_URL: http://proxy:4000/v1
       RAG_OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
       RAG_EMBEDDING_MODEL_AUTO_UPDATE: "false"
 
