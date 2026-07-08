@@ -32,6 +32,10 @@ services:
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     restart: unless-stopped
+    # Жёсткий потолок памяти (cgroups): контейнер не выйдет за 800 МБ.
+    # mem_reservation — «мягкая» цель, помогает планировщику под нагрузкой.
+    mem_limit: 800m
+    mem_reservation: 512m
     depends_on:
       proxy:
         condition: service_healthy
